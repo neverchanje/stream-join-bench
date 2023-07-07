@@ -12,14 +12,17 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/schollz/progressbar/v3"
 	"github.com/urfave/cli"
 	"gopkg.in/yaml.v2"
 )
 
 const (
-	defaultHost = "127.0.0.1"
-	defaultPort = 5432
-	defaultDB   = "postgres"
+	defaultHost        = "127.0.0.1"
+	defaultPort        = 5432
+	defaultDB          = "postgres"
+	defaultBatchSize   = 50
+	defaultThreadCount = 2
 )
 
 type Column struct {
@@ -38,9 +41,12 @@ type Table struct {
 	PreloadCount     int64              `yaml:"preload_count"`
 
 	// For the convenience of ordered iteration over columns.
-	columnNames   []string
+	columnNames []string
+
 	insertedCount atomic.Int64
 	updatedCount  int64
+
+	bar *progressbar.ProgressBar
 }
 
 type WorkloadConfig struct {
@@ -85,13 +91,24 @@ func main() {
 			Required: false,
 		},
 	}
+	preloadFlags := append(flags,
+		&cli.Int64Flag{
+			Name:  "batch",
+			Value: defaultBatchSize,
+			Usage: "Batch size for ingestion",
+		}, &cli.Int64Flag{
+			Name:  "thread",
+			Value: defaultThreadCount,
+			Usage: "The parallelism of ingestions that will load >= 10-million records. Larger parallelism doesn't always mean faster.",
+		},
+	)
 	app.Commands = []cli.Command{
 		{
 			Name:    "preload",
 			Usage:   "Preload data into the database",
 			Action:  preloadAction,
 			Aliases: []string{"p"},
-			Flags:   flags,
+			Flags:   preloadFlags,
 		},
 		{
 			Name:    "run",
@@ -119,6 +136,8 @@ func runWorkload(c *cli.Context, preload bool) error {
 	dbName := c.String("database")
 	username := c.String("username")
 	password := c.String("password")
+	batchSize := c.Int64("batch")
+	threadCount := c.Int64("thread")
 
 	// Load the workload configuration from YAML file
 	workloadConfig, err := loadWorkloadConfigFromFile(configPath)
@@ -140,33 +159,25 @@ func runWorkload(c *cli.Context, preload bool) error {
 	}
 	defer connPool.Close()
 
-	// Generate tables and records based on the workload configuration in parallel
-	var wg sync.WaitGroup
-	wg.Add(len(workloadConfig.Tables))
-
-	rewriteReferenceColumns(workloadConfig)
-	for _, tableConfig := range workloadConfig.Tables {
-		if err := createTable(connPool, tableConfig); err != nil {
+	rewriteWorkloadConfig(workloadConfig, preload)
+	for _, table := range workloadConfig.Tables {
+		if err := createTable(connPool, table); err != nil {
 			return err
 		}
-		go func(table *Table) {
-			defer wg.Done()
 
-			if preload {
-				table.preloadRecords(connPool)
-			} else {
-				table.performOperations(connPool)
-			}
-		}(tableConfig)
+		if preload {
+			table.preloadRecords(connPool, batchSize, threadCount)
+		} else {
+			table.performOperations(connPool)
+		}
 	}
 
-	wg.Wait()
 	fmt.Println("Tables and records created successfully!")
 	return nil
 }
 
-// Restructure the internal table configuration to make later operations easier.
-func rewriteReferenceColumns(workloadConfig WorkloadConfig) {
+// Restructure the internal workload configuration to make later operations easier.
+func rewriteWorkloadConfig(workloadConfig WorkloadConfig, preload bool) {
 	tableMap := make(map[string]*Table)
 	for _, table := range workloadConfig.Tables {
 		tableMap[table.Name] = table
@@ -186,6 +197,9 @@ func rewriteReferenceColumns(workloadConfig WorkloadConfig) {
 				column.Type = "bigserial"
 			}
 		}
+
+		// initialize the progress bar
+		table.bar = progressbar.Default(table.PreloadCount, fmt.Sprintf("Loading %s", table.Name))
 	}
 }
 
@@ -238,26 +252,63 @@ func createTable(conn *pgxpool.Pool, table *Table) error {
 }
 
 // preloadRecords generates and inserts records into the specified table
-func (t *Table) preloadRecords(conn *pgxpool.Pool) {
-	insertQuery := generateInsertQuery(t)
-
-	for i := int64(0); i < t.PreloadCount; i++ {
-		values := t.generateRandomRecordValues()
-		_, err := conn.Exec(context.Background(), insertQuery, values...)
-		if err != nil {
-			log.Fatalf("failed to insert record: %s, %s, %s", err, insertQuery, values)
+func (t *Table) preloadRecords(conn *pgxpool.Pool, batchSize int64, threadCount int64) {
+	if t.PreloadCount <= 10000000 {
+		preloadRecordsPartition(t, conn, batchSize, 0, t.PreloadCount)
+	} else {
+		recordsPerPartition := t.PreloadCount / threadCount
+		if t.PreloadCount%threadCount != 0 {
+			recordsPerPartition++
 		}
 
-		if i > 0 && i%100000 == 0 {
-			log.Printf("Inserted %d records to table %s", i, t.Name)
+		var wg sync.WaitGroup
+		for i := int64(0); i < threadCount; i++ {
+			start := i * recordsPerPartition
+			end := start + recordsPerPartition
+			if end > t.PreloadCount {
+				end = t.PreloadCount
+			}
+
+			wg.Add(1)
+			go func(start, end int64) {
+				defer wg.Done()
+				preloadRecordsPartition(t, conn, batchSize, start, end)
+			}(start, end)
 		}
+
+		wg.Wait()
 	}
 	log.Printf("Finished. Inserted %d records to table %s", t.PreloadCount, t.Name)
 }
 
+func preloadRecordsPartition(t *Table, conn *pgxpool.Pool, batchSize int64, start, end int64) {
+	// creating a buffer to hold a batch of records
+	valuesBuffer := make([][]interface{}, 0, batchSize)
+
+	for i := start; i < end; i++ {
+		valuesBuffer = append(valuesBuffer, t.generateRandomRecordValues())
+
+		// insert when buffer is full or when it's the last record
+		if len(valuesBuffer) == int(batchSize) || i == end-1 {
+			insertQuery := generateInsertQuery(t, len(valuesBuffer[0]), len(valuesBuffer))
+			// flatten the values
+			flatValues := flatten(valuesBuffer)
+			_, err := conn.Exec(context.Background(), insertQuery, flatValues...)
+			if err != nil {
+				log.Fatalf("failed to insert records: %s, %s, %s", err, insertQuery, flatValues)
+			}
+			// reset the buffer
+			valuesBuffer = valuesBuffer[:0]
+		}
+
+		// update the progress bar
+		_ = t.bar.Add(1)
+	}
+}
+
 // performOperations generates both inserts and updates to the table.
 func (t *Table) performOperations(conn *pgxpool.Pool) {
-	insertQuery := generateInsertQuery(t)
+	insertQuery := generateInsertQuery(t, len(t.columnNames), 1)
 	updateQuery := generateUpdateQuery(t)
 
 	for i := int64(0); i < t.OperationCount; i++ {
@@ -289,13 +340,20 @@ func (t *Table) performOperations(conn *pgxpool.Pool) {
 }
 
 // generateInsertQuery generates the INSERT query for the specified table
-func generateInsertQuery(table *Table) string {
-	valuePlaceholders := make([]string, len(table.Schema))
-	for i := range valuePlaceholders {
-		valuePlaceholders[i] = fmt.Sprintf("$%d", i+1)
+func generateInsertQuery(table *Table, numFields int, numRecords int) string {
+	valuePlaceholders := make([]string, 0, numFields*numRecords)
+
+	for i := 0; i < numRecords; i++ {
+		recordPlaceholders := make([]string, 0, numFields)
+		for j := 0; j < numFields; j++ {
+			// calculating the correct placeholder index
+			placeholderIndex := i*numFields + j + 1
+			recordPlaceholders = append(recordPlaceholders, fmt.Sprintf("$%d", placeholderIndex))
+		}
+		valuePlaceholders = append(valuePlaceholders, fmt.Sprintf("(%s)", strings.Join(recordPlaceholders, ", ")))
 	}
 
-	return fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table.Name, join(table.columnNames, ", "), join(valuePlaceholders, ", "))
+	return fmt.Sprintf("INSERT INTO %s (%s) VALUES %s", table.Name, join(table.columnNames, ", "), strings.Join(valuePlaceholders, ", "))
 }
 
 // generateUpdateQuery generates the UPDATE query for the specified table
@@ -387,4 +445,13 @@ func generateRandomString(length int) string {
 // join concatenates the elements of a string slice using a separator
 func join(elements []string, separator string) string {
 	return strings.Join(elements, separator)
+}
+
+// flatten flattens a 2D slice into a 1D slice
+func flatten(values [][]interface{}) []interface{} {
+	var flat []interface{}
+	for _, value := range values {
+		flat = append(flat, value...)
+	}
+	return flat
 }
