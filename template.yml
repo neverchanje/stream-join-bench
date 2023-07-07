@@ -1,0 +1,61 @@
+tables:
+  - name: product_categories
+    schema:
+      category_name:
+        type: varchar
+      description:
+        type: text
+    primary_key: category_id
+    preload_count: 50
+
+  - name: orders
+    schema:
+      customer_id:
+        type: integer
+      product_id:
+        reference: products
+      category_id:
+        reference: product_categories
+      order_date:
+        type: timestamp
+      shipment_date:
+        type: timestamp
+      status:
+        type: varchar
+      total_amount:
+        type: numeric
+      payment_method:
+        type: varchar
+      shipping_address:
+        type: text
+      order_notes:
+        type: text
+      discount_code:
+        type: varchar
+      tracking_number:
+        type: varchar
+    primary_key: order_id
+    operation_count: 1000000
+    update_proportion: 0.1
+    preload_count: 100000000
+
+  - name: products
+    schema:
+      category_id:
+        reference: product_categories
+      name:
+        type: varchar
+      price:
+        type: numeric
+      description:
+        type: text
+      in_stock:
+        type: boolean
+      created_at:
+        type: timestamp
+      updated_at:
+        type: timestamp
+    primary_key: product_id
+    operation_count: 100000
+    update_proportion: 0.5
+    preload_count: 500000
