@@ -48,6 +48,8 @@ services:
       POSTGRES_PASSWORD: postgres123
       POSTGRES_USER: postgresuser
       POSTGRES_DB: mydb
+    volumes:
+      - "/data/postgres:/var/lib/postgresql/data"
     healthcheck:
       test:
         [
