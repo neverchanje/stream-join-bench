@@ -1,4 +1,5 @@
 tables:
+  # The categories table allows us to join products and orders on a non-primary-key, i.e, the category id.
   - name: product_categories
     schema:
       category_name:
@@ -35,9 +36,10 @@ tables:
       tracking_number:
         type: varchar
     primary_key: order_id
-    operation_count: 1000000
-    update_proportion: 0.1
-    preload_count: 100000000
+    preload_count: 1000000
+    operation_count: 100000000
+    update_proportion: 0.99999
+    operations_per_second: 100
 
   - name: products
     schema:
@@ -56,6 +58,7 @@ tables:
       updated_at:
         type: timestamp
     primary_key: product_id
+    preload_count: 5000
     operation_count: 100000
-    update_proportion: 0.5
-    preload_count: 500000
+    update_proportion: 0.99999
+    operations_per_second: 100

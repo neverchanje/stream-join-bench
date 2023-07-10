@@ -1,0 +1,175 @@
+- name: factories
+  schema:
+    - name: factory_id
+      type: serial
+    - name: factory_name
+      type: varchar
+    - name: location
+      type: varchar
+    - name: established_date
+      type: date
+  primary_key: factory_id
+  preload_count: 100
+
+- name: production_lines
+  schema:
+    - name: line_id
+      type: serial
+    - name: factory_id
+      type: integer
+      reference:
+        - table: factories
+    - name: line_name
+      type: varchar
+    - name: capacity
+      type: integer
+    - name: is_active
+      type: boolean
+  primary_key: line_id
+  preload_count: 500
+
+- name: departments
+  schema:
+    - name: department_id
+      type: serial
+    - name: department_name
+      type: varchar
+    - name: factory_id
+      type: integer
+      reference:
+        - table: factories
+  primary_key: department_id
+  preload_count: 50
+
+- name: inventories
+  schema:
+    - name: inventory_id
+      type: serial
+    - name: department_id
+      type: integer
+      reference:
+        - table: departments
+    - name: product_id
+      type: integer
+    - name: stock_quantity
+      type: integer
+  primary_key: inventory_id
+  preload_count: 1000
+
+- name: transactions
+  schema:
+    - name: transaction_id
+      type: bigserial
+    - name: inventory_id
+      type: integer
+      reference:
+        - table: inventories
+    - name: transaction_date
+      type: timestamp
+    - name: amount
+      type: numeric
+    - name: payment_method
+      type: varchar
+    - name: status
+      type: varchar
+    - name: notes
+      type: text
+  primary_key: transaction_id
+  preload_count: 10000
+
+- name: stocks
+  schema:
+    - name: stock_id
+      type: serial
+    - name: product_id
+      type: integer
+    - name: quantity
+      type: integer
+  primary_key: stock_id
+  preload_count: 100000
+
+- name: shipments
+  schema:
+    - name: shipment_id
+      type: bigserial
+    - name: transaction_id
+      type: integer
+      reference:
+        - table: transactions
+    - name: shipment_date
+      type: timestamp
+    - name: destination
+      type: varchar
+    - name: tracking_number
+      type: varchar
+  primary_key: shipment_id
+  preload_count: 5000
+
+- name: inventory_locations
+  schema:
+    - name: location_id
+      type: serial
+    - name: location_name
+      type: varchar
+  primary_key: location_id
+  preload_count: 100
+
+- name: products
+  schema:
+    - name: product_id
+      type: serial
+    - name: product_name
+      type: varchar
+    - name: category_id
+      type: integer
+    - name: price
+      type: numeric
+    - name: description
+      type: text
+    - name: created_at
+      type: timestamp
+    - name: updated_at
+      type: timestamp
+  primary_key: product_id
+  preload_count: 10000
+
+- name: categories
+  schema:
+    - name: category_id
+      type: serial
+    - name: category_name
+      type: varchar
+  primary_key: category_id
+  preload_count: 10
+
+- name: suppliers
+  schema:
+    - name: supplier_id
+      type: serial
+    - name: supplier_name
+      type: varchar
+    - name: location
+      type: varchar
+    - name: contact_person
+      type: varchar
+  primary_key: supplier_id
+  preload_count: 50
+
+- name: supplier_products
+  schema:
+    - name: supplier_id
+      type: integer
+      reference:
+        - table: suppliers
+    - name: product_id
+      type: integer
+      reference:
+        - table: products
+    - name: unit_price
+      type: numeric
+    - name: quantity
+      type: integer
+  primary_key:
+    - supplier_id
+    - product_id
+  preload_count: 1000

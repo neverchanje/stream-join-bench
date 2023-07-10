@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/schollz/progressbar/v3"
 	"github.com/urfave/cli"
+	"github.com/vbauerster/mpb/v8"
+	"github.com/vbauerster/mpb/v8/decor"
+	"go.uber.org/ratelimit"
 	"gopkg.in/yaml.v2"
 )
 
@@ -35,10 +37,11 @@ type Column struct {
 type Table struct {
 	Name             string             `yaml:"name"`
 	Schema           map[string]*Column `yaml:"schema"`
-	OperationCount   int64              `yaml:"operation_count"`
 	UpdateProportion float64            `yaml:"update_proportion"`
 	PrimaryKey       string             `yaml:"primary_key"`
 	PreloadCount     int64              `yaml:"preload_count"`
+	OpsRate          int                `yaml:"operations_per_second"`
+	OperationCount   int64              `yaml:"operation_count"`
 
 	// For the convenience of ordered iteration over columns.
 	columnNames []string
@@ -46,11 +49,72 @@ type Table struct {
 	insertedCount atomic.Int64
 	updatedCount  int64
 
-	bar *progressbar.ProgressBar
+	bar *mpb.Bar
+	wg  *sync.WaitGroup
 }
 
 type WorkloadConfig struct {
 	Tables []*Table `yaml:"tables"`
+}
+
+type testRunner struct {
+	wg             sync.WaitGroup
+	progress       *mpb.Progress
+	workloadConfig *WorkloadConfig
+}
+
+func newTestRunner(workloadConfig *WorkloadConfig, preload bool) *testRunner {
+	r := &testRunner{}
+
+	p := mpb.New(
+		mpb.WithWaitGroup(&r.wg),
+	)
+	r.wg.Add(len(workloadConfig.Tables))
+	r.progress = p
+	r.workloadConfig = workloadConfig
+	r.rewriteWorkloadConfig(preload)
+	return r
+}
+
+// Restructure the internal workload configuration to make later operations easier.
+func (r *testRunner) rewriteWorkloadConfig(preload bool) {
+	tableMap := make(map[string]*Table)
+	for _, table := range r.workloadConfig.Tables {
+		tableMap[table.Name] = table
+	}
+	for _, table := range r.workloadConfig.Tables {
+		table.columnNames = make([]string, 0)
+		for columnName, column := range table.Schema {
+			table.columnNames = append(table.columnNames, columnName)
+
+			if column.Reference != "" {
+				referenceTable := tableMap[column.Reference]
+				if referenceTable == nil {
+					log.Fatalf("invalid reference table %s", column.Reference)
+					return
+				}
+				column.referenceTable = referenceTable
+				column.Type = "bigint"
+			}
+		}
+
+		total := table.PreloadCount
+		if !preload {
+			total = table.OperationCount
+		}
+		table.bar = r.progress.AddBar(total,
+			mpb.PrependDecorators(
+				decor.Name(table.Name),
+				decor.OnComplete(
+					decor.Counters(0, " %d / %d"),
+					" done",
+				),
+			),
+			mpb.AppendDecorators(
+				decor.AverageSpeed(0, "%.1f Ops/sec"),
+			))
+		table.wg = &r.wg
+	}
 }
 
 func main() {
@@ -136,8 +200,6 @@ func runWorkload(c *cli.Context, preload bool) error {
 	dbName := c.String("database")
 	username := c.String("username")
 	password := c.String("password")
-	batchSize := c.Int64("batch")
-	threadCount := c.Int64("thread")
 
 	// Load the workload configuration from YAML file
 	workloadConfig, err := loadWorkloadConfigFromFile(configPath)
@@ -159,47 +221,11 @@ func runWorkload(c *cli.Context, preload bool) error {
 	}
 	defer connPool.Close()
 
-	rewriteWorkloadConfig(workloadConfig, preload)
-	for _, table := range workloadConfig.Tables {
-		if err := createTable(connPool, table); err != nil {
-			return err
-		}
-
-		if preload {
-			table.preloadRecords(connPool, batchSize, threadCount)
-		} else {
-			table.performOperations(connPool)
-		}
-	}
-
-	fmt.Println("Tables and records created successfully!")
-	return nil
-}
-
-// Restructure the internal workload configuration to make later operations easier.
-func rewriteWorkloadConfig(workloadConfig WorkloadConfig, preload bool) {
-	tableMap := make(map[string]*Table)
-	for _, table := range workloadConfig.Tables {
-		tableMap[table.Name] = table
-	}
-	for _, table := range workloadConfig.Tables {
-		table.columnNames = make([]string, 0)
-		for columnName, column := range table.Schema {
-			table.columnNames = append(table.columnNames, columnName)
-
-			if column.Reference != "" {
-				referenceTable := tableMap[column.Reference]
-				if referenceTable == nil {
-					log.Fatalf("invalid reference table %s", column.Reference)
-					return
-				}
-				column.referenceTable = referenceTable
-				column.Type = "bigserial"
-			}
-		}
-
-		// initialize the progress bar
-		table.bar = progressbar.Default(table.PreloadCount, fmt.Sprintf("Loading %s", table.Name))
+	runner := newTestRunner(&workloadConfig, preload)
+	if preload {
+		return runner.preloadTables(connPool, c)
+	} else {
+		return runner.runTables(connPool)
 	}
 }
 
@@ -251,6 +277,22 @@ func createTable(conn *pgxpool.Pool, table *Table) error {
 	return nil
 }
 
+func (r *testRunner) preloadTables(connPool *pgxpool.Pool, c *cli.Context) error {
+	batchSize := c.Int64("batch")
+	threadCount := c.Int64("thread")
+
+	for _, table := range r.workloadConfig.Tables {
+		if err := createTable(connPool, table); err != nil {
+			return err
+		}
+		// Execute the preload sequentially.
+		table.preloadRecords(connPool, batchSize, threadCount)
+	}
+	// wait for passed wg and for all bars to complete and flush
+	r.progress.Wait()
+	return nil
+}
+
 // preloadRecords generates and inserts records into the specified table
 func (t *Table) preloadRecords(conn *pgxpool.Pool, batchSize int64, threadCount int64) {
 	if t.PreloadCount <= 10000000 {
@@ -278,6 +320,7 @@ func (t *Table) preloadRecords(conn *pgxpool.Pool, batchSize int64, threadCount 
 
 		wg.Wait()
 	}
+	t.wg.Done() // End the progress bar.
 	log.Printf("Finished. Inserted %d records to table %s", t.PreloadCount, t.Name)
 }
 
@@ -302,16 +345,46 @@ func preloadRecordsPartition(t *Table, conn *pgxpool.Pool, batchSize int64, star
 		}
 
 		// update the progress bar
-		_ = t.bar.Add(1)
+		t.bar.Increment()
 	}
 }
 
-// performOperations generates both inserts and updates to the table.
-func (t *Table) performOperations(conn *pgxpool.Pool) {
+// runTables runs in parallel for each tabls
+func (r *testRunner) runTables(connPool *pgxpool.Pool) error {
+	var wg sync.WaitGroup
+	for _, table := range r.workloadConfig.Tables {
+		wg.Add(1)
+		go func(t *Table) {
+			t.runOperations(connPool)
+			wg.Done()
+		}(table)
+	}
+	wg.Wait()
+
+	// wait for passed wg and for all bars to complete and flush
+	r.progress.Wait()
+
+	return nil
+}
+
+// runOperations generates both inserts and updates to the table.
+// The execution is single-threaded, as the throughput for each table is assumed to be low in the real-world.
+// We don't pursue peak performance in this test, we just want to generate a realistic workload and see if the system can sustain the performance.
+func (t *Table) runOperations(conn *pgxpool.Pool) {
 	insertQuery := generateInsertQuery(t, len(t.columnNames), 1)
 	updateQuery := generateUpdateQuery(t)
 
+	// Create a new rate limiter
+	var limiter ratelimit.Limiter = nil
+	if t.OpsRate > 0 {
+		limiter = ratelimit.New(t.OpsRate)
+	}
+
 	for i := int64(0); i < t.OperationCount; i++ {
+		// Wait for the limiter
+		if limiter != nil {
+			limiter.Take()
+		}
 
 		if rand.Float64() < t.UpdateProportion {
 			values := t.generateRandomRecordValues()
@@ -331,11 +404,10 @@ func (t *Table) performOperations(conn *pgxpool.Pool) {
 			}
 			t.insertedCount.Add(1)
 		}
-
-		if i > 0 && i%100000 == 0 {
-			log.Printf("Performed %d updates and %d inserts to table %s", t.updatedCount, t.insertedCount.Load(), t.Name)
-		}
+		// update the progress bar
+		t.bar.Increment()
 	}
+	t.wg.Done() // End the progress bar.
 	log.Printf("Finished. Performed %d updates and %d inserts to table %s", t.updatedCount, t.insertedCount.Load(), t.Name)
 }
 

@@ -1,0 +1,233 @@
+tables:
+  - name: product_data
+    schema:
+      product_id:
+        type: serial
+      product_name:
+        type: varchar
+      category_id:
+        type: integer
+        reference:
+          - table: categories
+      price:
+        type: numeric
+      description:
+        type: text
+      brand:
+        type: varchar
+      manufacturer:
+        type: varchar
+      weight:
+        type: numeric
+      length:
+        type: numeric
+      width:
+        type: numeric
+      height:
+        type: numeric
+      color:
+        type: varchar
+      material:
+        type: varchar
+      warranty:
+        type: integer
+      country_of_origin:
+        type: varchar
+      availability:
+        type: boolean
+      is_discounted:
+        type: boolean
+      discount_percentage:
+        type: numeric
+      discount_start_date:
+        type: date
+      discount_end_date:
+        type: date
+      rating:
+        type: numeric
+      num_reviews:
+        type: integer
+      is_featured:
+        type: boolean
+      featured_start_date:
+        type: date
+      featured_end_date:
+        type: date
+      is_new_arrival:
+        type: boolean
+      arrival_date:
+        type: date
+      is_popular:
+        type: boolean
+      is_trending:
+        type: boolean
+      num_views:
+        type: integer
+      num_likes:
+        type: integer
+      num_shares:
+        type: integer
+      num_purchases:
+        type: integer
+      tax_rate:
+        type: numeric
+      is_available_in_store:
+        type: boolean
+      store_quantity:
+        type: integer
+      store_location:
+        type: varchar
+      shipping_weight:
+        type: numeric
+      shipping_class:
+        type: varchar
+      shipping_duration:
+        type: integer
+      related_product_1:
+        type: integer
+        reference:
+          - table: product_data
+      related_product_2:
+        type: integer
+        reference:
+          - table: product_data
+      related_product_3:
+        type: integer
+        reference:
+          - table: product_data
+      tag_1:
+        type: varchar
+      tag_2:
+        type: varchar
+      tag_3:
+        type: varchar
+      tag_4:
+        type: varchar
+      tag_5:
+        type: varchar
+      attribute_1:
+        type: varchar
+      attribute_2:
+        type: varchar
+      attribute_3:
+        type: varchar
+      attribute_4:
+        type: varchar
+      attribute_5:
+        type: varchar
+      attribute_6:
+        type: varchar
+      attribute_7:
+        type: varchar
+      attribute_8:
+        type: varchar
+      attribute_9:
+        type: varchar
+      attribute_10:
+        type: varchar
+      attribute_11:
+        type: varchar
+      attribute_12:
+        type: varchar
+      attribute_13:
+        type: varchar
+      attribute_14:
+        type: varchar
+      attribute_15:
+        type: varchar
+      attribute_16:
+        type: varchar
+      attribute_17:
+        type: varchar
+      attribute_18:
+        type: varchar
+      attribute_19:
+        type: varchar
+      attribute_20:
+        type: varchar
+      attribute_21:
+        type: varchar
+      attribute_22:
+        type: varchar
+      attribute_23:
+        type: varchar
+      attribute_24:
+        type: varchar
+      attribute_25:
+        type: varchar
+      attribute_26:
+        type: varchar
+      attribute_27:
+        type: varchar
+      attribute_28:
+        type: varchar
+      attribute_29:
+        type: varchar
+      attribute_30:
+        type: varchar
+      attribute_31:
+        type: varchar
+      attribute_32:
+        type: varchar
+      attribute_33:
+        type: varchar
+      attribute_34:
+        type: varchar
+      attribute_35:
+        type: varchar
+      attribute_36:
+        type: varchar
+      attribute_37:
+        type: varchar
+      attribute_38:
+        type: varchar
+      attribute_39:
+        type: varchar
+      attribute_40:
+        type: varchar
+      attribute_41:
+        type: varchar
+      attribute_42:
+        type: varchar
+      attribute_43:
+        type: varchar
+      attribute_44:
+        type: varchar
+      attribute_45:
+        type: varchar
+      attribute_46:
+        type: varchar
+      attribute_47:
+        type: varchar
+      attribute_48:
+        type: varchar
+      attribute_49:
+        type: varchar
+      attribute_50:
+        type: varchar
+      attribute_51:
+        type: varchar
+      attribute_52:
+        type: varchar
+      attribute_53:
+        type: varchar
+      attribute_54:
+        type: varchar
+      attribute_55:
+        type: varchar
+      attribute_56:
+        type: varchar
+      attribute_57:
+        type: varchar
+      attribute_58:
+        type: varchar
+      attribute_59:
+        type: varchar
+      attribute_60:
+        type: varchar
+      attribute_61:
+        type: varchar
+      attribute_62:
+        type: varchar
+    primary_key: product_id
+    preload_count: 1000
