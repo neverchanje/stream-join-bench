@@ -45,6 +45,7 @@ services:
     ports:
       - 5432:5432
     environment:
+      POSTGRES_PASSWORD: postgres123
       POSTGRES_USER: postgresuser
       POSTGRES_DB: mydb
     healthcheck:

@@ -8,7 +8,7 @@ curl -s -X PUT -H "Content-Type: application/json" http://debezium:8083/connecto
     "database.hostname": "postgres",
     "database.port": 5432,
     "database.user": "root",
-    "database.password": "",
+    "database.password": "postgres123",
     "database.dbname": "postgres",
     "database.server.name": "postgres",
     "database.schema": "public",
