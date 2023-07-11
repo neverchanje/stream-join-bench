@@ -208,11 +208,12 @@ func runWorkload(c *cli.Context, preload bool) error {
 	}
 
 	// Configure database connection pool
-	config, err := pgxpool.ParseConfig(fmt.Sprintf("postgresql://%s:%s@%s:%d/%s",
-		username, password, host, port, dbName))
+	addr := fmt.Sprintf("postgresql://%s:%s@%s:%d/%s", username, password, host, port, dbName)
+	config, err := pgxpool.ParseConfig(addr)
 	if err != nil {
 		return fmt.Errorf("failed to parse database configuration: %s", err)
 	}
+	log.Print("Connecting to database: ", addr)
 
 	// Create connection pool
 	connPool, err := pgxpool.NewWithConfig(context.Background(), config)
