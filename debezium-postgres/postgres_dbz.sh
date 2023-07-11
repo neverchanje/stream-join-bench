@@ -2,7 +2,7 @@
 
 echo "Deploying Debezium Postgres connector"
 
-curl -s -X PUT -H "Content-Type: application/json" http://debezium:8083/connectors/register-postgres/config \
+curl -s -X PUT -H "Content-Type: application/json" http://127.0.0.1:8083/connectors/register-postgres/config \
   -d '{
     "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
     "database.hostname": "postgres",

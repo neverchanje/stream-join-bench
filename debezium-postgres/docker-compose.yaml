@@ -38,7 +38,11 @@ services:
     networks:
       - redpanda_network
     healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"
+        ]
       interval: 15s
       timeout: 3s
       retries: 5
@@ -93,46 +97,3 @@ services:
       - redpanda_network
     hostname: debezium
     container_name: debezium
-
-  debezium_deploy:
-    image: debezium/connect:1.9
-    depends_on:
-      debezium:
-        condition: service_healthy
-    volumes:
-      - ./postgres_dbz.sh:/postgres_dbz.sh
-    entrypoint: [ bash, -c, /postgres_dbz.sh ]
-    networks:
-      - redpanda_network
-    container_name: debezium_deploy
-    restart: on-failure
-
-  console:
-    image: docker.redpanda.com/redpandadata/console:v2.2.4
-    entrypoint: /bin/sh
-    command: -c "echo \"$$CONSOLE_CONFIG_FILE\" > /tmp/config.yml; /app/console"
-    environment:
-      CONFIG_FILEPATH: /tmp/config.yml
-      CONSOLE_CONFIG_FILE: |
-        kafka:
-          brokers: ["redpanda:9092"]
-          schemaRegistry:
-            enabled: true
-            urls: ["http://redpanda:8081"]
-        redpanda:
-          adminApi:
-            enabled: true
-            urls: ["http://redpanda:9644"]
-        connect:
-          enabled: true
-          clusters:
-            - name: debezium
-              url: http://debezium:8083
-    ports:
-      - 8080:8080
-    networks:
-      - redpanda_network
-    depends_on:
-      - redpanda
-    container_name: console
-
