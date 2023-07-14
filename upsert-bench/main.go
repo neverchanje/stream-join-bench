@@ -24,7 +24,7 @@ type Value struct {
 
 type Key struct {
 	CompanyID string `json:"company_id"`
-	ID        string `json:"id"`
+	ID        string `json:"_id"`
 }
 
 func randomStringArray() []string {
@@ -63,6 +63,7 @@ func main() {
 		config := sarama.NewConfig()
 		config.Producer.RequiredAcks = sarama.WaitForAll
 		config.Producer.Return.Successes = true
+		config.Producer.Compression = sarama.CompressionSnappy
 		producer, err := sarama.NewAsyncProducer([]string{c.String("brokers")}, config)
 		if err != nil {
 			return err
