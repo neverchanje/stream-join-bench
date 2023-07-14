@@ -5,50 +5,8 @@ networks:
   redpanda_network:
     driver: bridge
 volumes:
-  redpanda: null
   postgres: null
 services:
-  redpanda:
-    image: docker.redpanda.com/redpandadata/redpanda:v23.1.13
-    command:
-      - redpanda start
-      - --smp 1
-      - --overprovisioned
-      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
-      # Address the broker advertises to clients that connect to the Kafka API.
-      # Use the internal addresses to connect to the Redpanda brokers
-      # from inside the same Docker network.
-      # Use the external addresses to connect to the Redpanda brokers
-      # from outside the Docker network.
-      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
-      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
-      # Address the broker advertises to clients that connect to the HTTP Proxy.
-      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
-      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
-      # Redpanda brokers use the RPC API to communicate with each other internally.
-      - --rpc-addr redpanda:33145
-      - --advertise-rpc-addr redpanda:33145
-    ports:
-      - 18081:18081
-      - 18082:18082
-      - 19092:19092
-      - 19644:9644
-    volumes:
-      - redpanda:/var/lib/redpanda/data
-    networks:
-      - redpanda_network
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"
-        ]
-      interval: 15s
-      timeout: 3s
-      retries: 5
-      start_period: 5s
-    container_name: redpanda
-
   postgres:
     image: debezium/postgres:13
     ports:
@@ -76,14 +34,14 @@ services:
   debezium:
     image: debezium/connect:1.9
     environment:
-      BOOTSTRAP_SERVERS: redpanda:9092
+      BOOTSTRAP_SERVERS: 0.0.0.0:9092
       GROUP_ID: 1
       CONFIG_STORAGE_TOPIC: connect_configs
       OFFSET_STORAGE_TOPIC: connect_offsets
       KEY_CONVERTER: io.confluent.connect.avro.AvroConverter
       VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
-      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: http://redpanda:18081
-      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://redpanda:18081
+      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: http://0.0.0.0:8081
+      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://0.0.0.0:8081
     ports:
       - 8083:8083
     healthcheck:
@@ -91,7 +49,6 @@ services:
       interval: 1s
       start_period: 120s
     depends_on:
-      redpanda: { condition: service_healthy }
       postgres: { condition: service_healthy }
     networks:
       - redpanda_network
