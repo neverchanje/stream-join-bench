@@ -86,8 +86,7 @@ func main() {
 
 			valueBytes, err := json.Marshal(value)
 			if err != nil {
-				fmt.Printf("json.Marshal error: %s", err)
-				continue
+				return fmt.Errorf("json.Marshal error: %s", err)
 			}
 
 			rand.Seed(time.Now().UnixNano())
@@ -101,8 +100,7 @@ func main() {
 
 			keyBytes, err := json.Marshal(key)
 			if err != nil {
-				fmt.Printf("json.Marshal error: %s", err)
-				continue
+				return fmt.Errorf("json.Marshal error: %s", err)
 			}
 
 			err = writer.WriteMessages(context.Background(),
@@ -112,7 +110,7 @@ func main() {
 				},
 			)
 			if err != nil {
-				fmt.Println("Failed to write messages:", err)
+				return fmt.Errorf("Failed to write messages:", err)
 			}
 
 			_ = bar.Add(1)
