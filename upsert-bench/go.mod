@@ -3,14 +3,13 @@ module main
 go 1.19
 
 require (
+	github.com/Shopify/sarama v1.38.1
 	github.com/google/uuid v1.3.0
 	github.com/schollz/progressbar/v3 v3.13.1
-	github.com/segmentio/kafka-go v0.4.42
 	github.com/urfave/cli v1.22.14
 )
 
 require (
-	github.com/Shopify/sarama v1.38.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/eapache/go-resiliency v1.3.0 // indirect
