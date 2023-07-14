@@ -1,16 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/rand"
 	"os"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/google/uuid"
 	"github.com/schollz/progressbar/v3"
+	"github.com/segmentio/kafka-go"
 	"github.com/urfave/cli"
 )
 
@@ -53,25 +53,12 @@ func main() {
 	}
 
 	app.Action = func(c *cli.Context) error {
-		p, err := kafka.NewProducer(&kafka.ConfigMap{"bootstrap.servers": c.String("brokers")})
-		if err != nil {
-			panic(err)
-		}
-
-		defer p.Close()
-
-		go func() {
-			for e := range p.Events() {
-				switch ev := e.(type) {
-				case *kafka.Message:
-					if ev.TopicPartition.Error != nil {
-						fmt.Printf("Delivery failed: %v\n", ev.TopicPartition)
-					} else {
-						fmt.Printf("Delivered message to %v\n", ev.TopicPartition)
-					}
-				}
-			}
-		}()
+		writer := kafka.NewWriter(kafka.WriterConfig{
+			Brokers:  []string{c.String("brokers")},
+			Topic:    "rw_qw_customer",
+			Balancer: &kafka.LeastBytes{},
+		})
+		defer writer.Close()
 
 		companyIds := make([]string, 100)
 		for i := range companyIds {
@@ -85,7 +72,6 @@ func main() {
 
 		recordsCount := int64(100000000)
 		bar := progressbar.Default(recordsCount)
-		topic := "rw_qw_customer"
 		for i := int64(0); i < recordsCount; i++ {
 			var complexData ComplexJSON
 			for j := 0; j < 100; j++ {
@@ -119,18 +105,14 @@ func main() {
 				continue
 			}
 
-			err = p.Produce(&kafka.Message{
-				TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-				Value:          valueBytes,
-				Key:            keyBytes,
-			}, nil)
+			err = writer.WriteMessages(context.Background(),
+				kafka.Message{
+					Key:   keyBytes,
+					Value: valueBytes,
+				},
+			)
 			if err != nil {
-				log.Println("Failed to produce message: ", err)
-			}
-
-			// Flush every 5000 messages
-			if i%5000 == 0 {
-				p.Flush(15 * 1000)
+				fmt.Println("Failed to write messages:", err)
 			}
 
 			_ = bar.Add(1)
