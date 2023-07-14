@@ -4,7 +4,6 @@ go 1.19
 
 require (
 	github.com/Shopify/sarama v1.38.1
-	github.com/google/uuid v1.3.0
 	github.com/schollz/progressbar/v3 v3.13.1
 	github.com/urfave/cli v1.22.14
 )

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/google/uuid"
 	"github.com/schollz/progressbar/v3"
 	"github.com/urfave/cli"
 )
@@ -29,13 +28,20 @@ type Key struct {
 }
 
 func randomStringArray() []string {
-	rand.Seed(time.Now().UnixNano())
-	length := rand.Intn(10)
 	var arr []string
-	for i := 0; i < length; i++ {
-		arr = append(arr, uuid.New().String())
-	}
+	size := rand.Intn(17) // Generate strings of size 0 to 16 bytes
+	arr = append(arr, randomString(size))
 	return arr
+}
+
+// randomString generates a random string of the given length.
+func randomString(length int) string {
+	chars := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+	var b []rune
+	for i := 0; i < length; i++ {
+		b = append(b, chars[rand.Intn(len(chars))])
+	}
+	return string(b)
 }
 
 func main() {
@@ -52,6 +58,8 @@ func main() {
 	}
 
 	app.Action = func(c *cli.Context) error {
+		rand.Seed(time.Now().UnixNano())
+
 		config := sarama.NewConfig()
 		config.Producer.RequiredAcks = sarama.WaitForAll
 		config.Producer.Return.Successes = true
@@ -78,12 +86,12 @@ func main() {
 
 		companyIds := make([]string, 100)
 		for i := range companyIds {
-			companyIds[i] = uuid.New().String()
+			companyIds[i] = randomString(4)
 		}
 
 		employeeIds := make([]string, 1000)
 		for i := range employeeIds {
-			employeeIds[i] = uuid.New().String()
+			employeeIds[i] = randomString(8)
 		}
 
 		for i := 0; i < recordsCount; i++ {
@@ -93,8 +101,8 @@ func main() {
 			}
 
 			value := Value{
-				TenantID: uuid.New().String(),
-				ID:       uuid.New().String(),
+				TenantID: randomString(12),
+				ID:       randomString(36),
 				Data:     complexData,
 			}
 
@@ -103,7 +111,6 @@ func main() {
 				return fmt.Errorf("json.Marshal error: %s", err)
 			}
 
-			rand.Seed(time.Now().UnixNano())
 			companyID := companyIds[rand.Intn(100)]
 			id := employeeIds[rand.Intn(1000)]
 
