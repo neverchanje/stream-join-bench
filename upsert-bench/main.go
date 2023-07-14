@@ -1,16 +1,15 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
 	"time"
 
+	"github.com/Shopify/sarama"
 	"github.com/google/uuid"
 	"github.com/schollz/progressbar/v3"
-	"github.com/segmentio/kafka-go"
 	"github.com/urfave/cli"
 )
 
@@ -53,12 +52,29 @@ func main() {
 	}
 
 	app.Action = func(c *cli.Context) error {
-		writer := kafka.NewWriter(kafka.WriterConfig{
-			Brokers:  []string{c.String("brokers")},
-			Topic:    "rw_qw_customer",
-			Balancer: &kafka.LeastBytes{},
-		})
-		defer writer.Close()
+		config := sarama.NewConfig()
+		config.Producer.RequiredAcks = sarama.WaitForAll
+		config.Producer.Return.Successes = true
+		producer, err := sarama.NewAsyncProducer([]string{c.String("brokers")}, config)
+		if err != nil {
+			return err
+		}
+		defer producer.AsyncClose()
+
+		go func() {
+			for err := range producer.Errors() {
+				fmt.Println("Failed to write message:", err)
+			}
+		}()
+
+		const recordsCount = 100000000
+		bar := progressbar.Default(recordsCount)
+		defer bar.Finish()
+		go func() {
+			for range producer.Successes() {
+				_ = bar.Add(1)
+			}
+		}()
 
 		companyIds := make([]string, 100)
 		for i := range companyIds {
@@ -70,9 +86,7 @@ func main() {
 			employeeIds[i] = uuid.New().String()
 		}
 
-		recordsCount := int64(100000000)
-		bar := progressbar.Default(recordsCount)
-		for i := int64(0); i < recordsCount; i++ {
+		for i := 0; i < recordsCount; i++ {
 			var complexData ComplexJSON
 			for j := 0; j < 100; j++ {
 				complexData.Field[j] = randomStringArray()
@@ -103,19 +117,14 @@ func main() {
 				return fmt.Errorf("json.Marshal error: %s", err)
 			}
 
-			err = writer.WriteMessages(context.Background(),
-				kafka.Message{
-					Key:   keyBytes,
-					Value: valueBytes,
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("Failed to write messages:", err)
+			msg := &sarama.ProducerMessage{
+				Topic: "rw_qw_customer",
+				Key:   sarama.ByteEncoder(keyBytes),
+				Value: sarama.ByteEncoder(valueBytes),
 			}
-
-			_ = bar.Add(1)
+			producer.Input() <- msg
 		}
-		_ = bar.Finish()
+
 		return nil
 	}
 
