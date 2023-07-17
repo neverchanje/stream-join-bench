@@ -78,7 +78,9 @@ func main() {
 
 		const recordsCount = 100000000
 		bar := progressbar.Default(recordsCount)
-		defer bar.Finish()
+		defer func() {
+			_ = bar.Finish()
+		}()
 		go func() {
 			for range producer.Successes() {
 				_ = bar.Add(1)
@@ -88,11 +90,6 @@ func main() {
 		companyIds := make([]string, 100)
 		for i := range companyIds {
 			companyIds[i] = randomString(4)
-		}
-
-		employeeIds := make([]string, 1000)
-		for i := range employeeIds {
-			employeeIds[i] = randomString(8)
 		}
 
 		for i := 0; i < recordsCount; i++ {
@@ -113,11 +110,11 @@ func main() {
 			}
 
 			companyID := companyIds[rand.Intn(100)]
-			id := employeeIds[rand.Intn(1000)]
+			id := rand.Intn(1000000)
 
 			key := Key{
 				CompanyID: companyID,
-				ID:        id,
+				ID:        fmt.Sprintf("%d", id),
 			}
 
 			keyBytes, err := json.Marshal(key)
